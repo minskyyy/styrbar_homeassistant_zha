@@ -3,8 +3,8 @@ blueprint:
   description: A blueprint that allows Ikea Styrbar remote (ZHA) to control multiple lights.
   domain: automation
   input:
-    controller:
-      name: Controller
+    remote:
+      name: Remote
       description: The Styrbar remote to be used to control the lights.
       selector:
         device:
@@ -24,9 +24,9 @@ blueprint:
       name: Light(s)
       description: The lights that will be controlled by the controller.
       selector:
-        entity:
-          domain: light
-          multiple: true
+        target:
+          entity:
+            domain: light
   source_url: https://gist.github.com/Zuulcode/6149d9c61c8679d963aeecde02055269
 variables:
   light_number: !input light_number
@@ -36,72 +36,35 @@ trigger:
   - platform: event
     event_type: zha_event
     event_data:
-      device_ieee: !input controller
-      command: "on"
-    id: 'on'
-  - platform: event
-    event_type: zha_event
-    event_data:
-      device_ieee: !input controller
-      command: "off"
-    id: 'off'
-  - platform: event
-    event_type: zha_event
-    event_data:
-      device_ieee: !input controller
-      command: "step"
-      args:
-        step_mode: 0  # Step down
-    id: arrow_left_click
-  - platform: event
-    event_type: zha_event
-    event_data:
-      device_ieee: !input controller
-      command: "step"
-      args:
-        step_mode: 1  # Step up
-    id: arrow_right_click
-  - platform: event
-    event_type: zha_event
-    event_data:
-      device_ieee: !input controller
-      command: "move"
-      args:
-        move_mode: 0  # Brightness up
-    id: brightness_move_up
-  - platform: event
-    event_type: zha_event
-    event_data:
-      device_ieee: !input controller
-      command: "move"
-      args:
-        move_mode: 1  # Brightness down
-    id: brightness_move_down
-  - platform: event
-    event_type: zha_event
-    event_data:
-      device_ieee: !input controller
-      command: "stop"
-    id: brightness_stop
+      device_id: !input remote
+
 action:
+  - variables:
+      command: "{{ trigger.event.data.command }}"
+      cluster_id: "{{ trigger.event.data.cluster_id }}"
+      endpoint_id: "{{ trigger.event.data.endpoint_id }}"
+      args: "{{ trigger.event.data.args }}"
   - choose:
       - conditions:
-          - condition: trigger
-            id: 'on'
+          - "{{ command == 'on' }}"
+          - "{{ cluster_id == 6 }}"
+          - "{{ endpoint_id == 1 }}"
         sequence:
           - service: light.turn_on
             target:
               entity_id: '{{ lights[int(states(light_number)) - 1] }}'
       - conditions:
-          - condition: trigger
-            id: 'off'
+          - "{{ command == 'off' }}"
+          - "{{ cluster_id == 6 }}"
+          - "{{ endpoint_id == 1 }}"
         sequence:
           - service: light.turn_off
             target:
               entity_id: '{{ lights[int(states(light_number)) - 1] }}'
       - conditions:
-          - condition: trigger
-            id: arrow_left_click
+          - "{{ command == 'step' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ args[0] == 0 }}"  # Step down
         sequence:
           - service: input_number.set_value
             data:
@@ -109,8 +72,9 @@ action:
             target:
               entity_id: !input light_number
       - conditions:
-          - condition: trigger
-            id: arrow_right_click
+          - "{{ command == 'step' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ args[0] == 1 }}"  # Step up
         sequence:
           - service: input_number.set_value
             data:
@@ -118,13 +82,14 @@ action:
             target:
               entity_id: !input light_number
       - conditions:
-          - condition: trigger
-            id: brightness_move_up
+          - "{{ command == 'move' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ args[0] == 0 }}"  # Brightness up
         sequence:
           - repeat:
               until:
-                - condition: trigger
-                  id: brightness_stop
+                - condition: template
+                  value_template: "{{ command == 'stop' }}"
               sequence:
                 - service: light.turn_on
                   target:
@@ -134,13 +99,14 @@ action:
                 - delay:
                     milliseconds: 500
       - conditions:
-          - condition: trigger
-            id: brightness_move_down
+          - "{{ command == 'move' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ args[0] == 1 }}"  # Brightness down
         sequence:
           - repeat:
               until:
-                - condition: trigger
-                  id: brightness_stop
+                - condition: template
+                  value_template: "{{ command == 'stop' }}"
               sequence:
                 - service: light.turn_on
                   target:
